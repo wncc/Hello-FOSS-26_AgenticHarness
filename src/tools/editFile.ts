@@ -1,6 +1,6 @@
-import path from 'node:path';
 import fs from 'node:fs';
 import { Tool, ToolResult } from '../types/tool.js';
+import { resolveInProject } from '../utils/workspace.js';
 
 interface EditFileArgs {
     path: string;
@@ -32,7 +32,10 @@ export function createEditFileTool(projectRoot: string): Tool<EditFileArgs> {
         },
         execute: async ({ path: filePath, oldString, newString }): Promise<ToolResult> => {
             try {
-                const resolvedPath = path.resolve(projectRoot, filePath);
+                const resolvedPath = resolveInProject(projectRoot, filePath);
+                if (!resolvedPath) {
+                    return { content: `Error: "${filePath}" escapes the project root.` };
+                }
 
                 if (!fs.existsSync(resolvedPath)) {
                     return { content: `Error: File "${filePath}" does not exist. Use write_file to create new files.` };

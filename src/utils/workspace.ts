@@ -64,3 +64,27 @@ export function getProjectTree(dir: string, depth = 2, currentDepth = 0, prefix 
         return '';
     }
 }
+
+function nearestExisting(target: string): string {
+    let current = target;
+    while (!fs.existsSync(current)) {
+        const parent = path.dirname(current);
+        if (parent === current) return current;
+        current = parent;
+    }
+    return current;
+}
+
+/**
+ * Resolves a tool's path argument against the project root.
+ * Returns null when the result lands outside the root, so the caller can refuse it.
+ * Symlinks are followed on the closest existing ancestor: a link inside the root
+ * that points elsewhere must not become a way out.
+ */
+export function resolveInProject(projectRoot: string, target: string): string | null {
+    const resolved = path.resolve(projectRoot, target);
+    const root = fs.realpathSync(projectRoot);
+    const relative = path.relative(root, fs.realpathSync(nearestExisting(resolved)));
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+    return resolved;
+}

@@ -1,6 +1,6 @@
-import path from 'node:path';
 import fs from 'node:fs';
 import { Tool } from '../types/tool.js';
+import { resolveInProject } from '../utils/workspace.js';
 
 interface ReadFileArgs {
     path: string;
@@ -35,7 +35,10 @@ export function createReadFileTool(projectRoot: string): Tool<ReadFileArgs> {
 
         execute: async ({ path: filePath, startLine, endLine }) => {
             try {
-                const resolvedPath = path.resolve(projectRoot, filePath);
+                const resolvedPath = resolveInProject(projectRoot, filePath);
+                if (!resolvedPath) {
+                    return { content: `Error: "${filePath}" escapes the project root.` };
+                }
                 if (!fs.existsSync(resolvedPath)) {
                     return { content: `Error: File "${filePath}" does not exist.` };
                 }
