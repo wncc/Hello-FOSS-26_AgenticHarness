@@ -12,7 +12,11 @@ export class OpenAiChatService implements ChatService {
 
     }
 
-    async chat(messages: ChatMessage[], tools?: Tool[]): Promise<ChatResponse> {
+    async chat(
+        messages: ChatMessage[],
+        tools?: Tool[],
+        signal?: AbortSignal
+    ): Promise<ChatResponse> {
         const openAiTools = tools?.map((tool => ({
             type: 'function' as const,
             function: {
@@ -43,12 +47,15 @@ export class OpenAiChatService implements ChatService {
 
         const hasTerminalTool = tools?.some((tool) => tool.name === 'execute_command');
 
-        const response = await openai.chat.completions.create({
-            model: config.model,
-            messages: openAiMessages as any,
-            tools: openAiTools?.length ? openAiTools : undefined,
-            parallel_tool_calls: hasTerminalTool ? false : undefined,
-        });
+        const response = await openai.chat.completions.create(
+            {
+                model: config.model,
+                messages: openAiMessages as any,
+                tools: openAiTools?.length ? openAiTools : undefined,
+                parallel_tool_calls: hasTerminalTool ? false : undefined,
+            },
+            { signal }
+        );
 
         const choice = response.choices[0];
         if (!choice?.message) {

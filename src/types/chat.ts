@@ -47,7 +47,11 @@ export interface ChatResponse {
 }
 
 export interface ChatService {
-    chat(messages: ChatMessage[], tools?: Tool[]): Promise<ChatResponse>;
+    chat(
+        messages: ChatMessage[],
+        tools?: Tool[],
+        signal?: AbortSignal
+    ): Promise<ChatResponse>;
 }
 
 export interface AgentState {

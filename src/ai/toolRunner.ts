@@ -12,17 +12,44 @@ export class ToolRunner {
 
     public async execute(
         toolCall: ToolCall,
-        onChunk?: (chunk: string) => void
+        onChunk?: (chunk: string) => void,
+        signal?: AbortSignal
     ): Promise<ToolResult> {
+        if (signal?.aborted) {
+            throw new DOMException('Operation cancelled', 'AbortError');
+        }
+
         const tool = this.getTool(toolCall.name);
+
         if (!tool) {
             return { content: `Error: Tool "${toolCall.name}" not found.` };
         }
 
         try {
-            return await tool.execute(toolCall.arguments, onChunk);
-        } catch (err: any) {
-            return { content: `Error executing "${toolCall.name}": ${err?.message || String(err)}` };
+            const result = await tool.execute(
+                toolCall.arguments,
+                onChunk,
+                signal
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Operation cancelled', 'AbortError');
+            }
+
+            return result;
+        } catch (err: unknown) {
+            if (
+                signal?.aborted ||
+                (err instanceof Error && err.name === 'AbortError')
+            ) {
+                throw err;
+            }
+
+            const message = err instanceof Error ? err.message : String(err);
+
+            return {
+                content: `Error executing "${toolCall.name}": ${message}`,
+            };
         }
     }
 }

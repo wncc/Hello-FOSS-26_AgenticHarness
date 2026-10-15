@@ -8,7 +8,11 @@ export interface Tool<TArgs = any> {
     }
 
     requiresApproval?: boolean | ((args: TArgs) => boolean);
-    execute: (args: TArgs, onChunk?: (chunk: string) => void) => Promise<ToolResult> | ToolResult;
+    execute: (
+        args: TArgs,
+        onChunk?: (chunk: string) => void,
+        signal?: AbortSignal
+    ) => Promise<ToolResult> | ToolResult;
 }
 
 export interface ToolResult {

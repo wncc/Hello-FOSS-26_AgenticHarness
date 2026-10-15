@@ -14,7 +14,7 @@ async function main() {
 
     const projectRoot = await getProjectRoot();
     const agent = createCodingAgent(projectRoot);
-    await render(<App agent={agent} projectRoot={projectRoot} />);
+    await render(<App agent={agent} projectRoot={projectRoot} />, { exitOnCtrlC: false });
     
 }
 

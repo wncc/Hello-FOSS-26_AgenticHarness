@@ -38,10 +38,14 @@ export function createTerminalTool(projectRoot: string): Tool<TerminalArgs> {
             },
             required: ['command'],
         },
-        execute: async ({ command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS }, onChunk?: (chunk: string) => void): Promise<ToolResult> => {
+        execute: async ({ command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS }, onChunk?: (chunk: string) => void, signal?: AbortSignal): Promise<ToolResult> => {
             const trimmedCommand = command?.trim();
             if (!trimmedCommand) {
                 return { content: 'Error: No command provided to execute.' };
+            }
+
+            if (signal?.aborted) {
+                throw new DOMException('Operation cancelled', 'AbortError');
             }
 
             // Resolve and validate target working directory
@@ -58,9 +62,12 @@ export function createTerminalTool(projectRoot: string): Tool<TerminalArgs> {
                 targetCwd = resolved;
             }
 
-            return new Promise<ToolResult>((resolve) => {
+            return new Promise<ToolResult>((resolve, reject) => {
                 const isWindows = process.platform === 'win32';
-                const shell = isWindows ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
+                const shell = isWindows
+                    ? 'powershell.exe'
+                    : (process.env.SHELL || '/bin/bash');
+
                 const shellArgs = isWindows
                     ? ['-NoProfile', '-NonInteractive', '-Command', trimmedCommand]
                     : ['-c', trimmedCommand];
@@ -68,11 +75,13 @@ export function createTerminalTool(projectRoot: string): Tool<TerminalArgs> {
                 let stdoutBuf = '';
                 let stderrBuf = '';
                 let timedOut = false;
+                let cancelled = false;
+                let finished = false;
 
                 const proc = spawn(shell, shellArgs, {
                     cwd: targetCwd,
-                    // stdio: 'ignore' on stdin immediately signals EOF to prevent hanging on interactive inputs
                     stdio: ['ignore', 'pipe', 'pipe'],
+                    detached: !isWindows,
                     env: {
                         ...process.env,
                         CI: 'true',
@@ -82,55 +91,106 @@ export function createTerminalTool(projectRoot: string): Tool<TerminalArgs> {
                     },
                 });
 
-                const appendStdout = (data: Buffer) => {
+                const appendOutput = (data: Buffer, isStderr: boolean) => {
                     const text = data.toString('utf-8');
-                    stdoutBuf += text;
-                    if (onChunk) {
-                        try {
-                            onChunk(text);
-                        } catch {
-                            // Ignore callback errors during streaming
-                        }
+
+                    if (isStderr) {
+                        stderrBuf += text;
+                    } else {
+                        stdoutBuf += text;
+                    }
+
+                    try {
+                        onChunk?.(text);
+                    } catch {
+                        // Ignore streaming callback errors.
                     }
                 };
 
-                const appendStderr = (data: Buffer) => {
-                    const text = data.toString('utf-8');
-                    stderrBuf += text;
-                    if (onChunk) {
-                        try {
-                            onChunk(text);
-                        } catch {
-                            // Ignore callback errors during streaming
-                        }
-                    }
-                };
-
-                proc.stdout?.on('data', appendStdout);
-                proc.stderr?.on('data', appendStderr);
+                proc.stdout?.on('data', (data: Buffer) => appendOutput(data, false));
+                proc.stderr?.on('data', (data: Buffer) => appendOutput(data, true));
 
                 const timeout = setTimeout(() => {
                     timedOut = true;
-                    try {
-                        proc.kill('SIGTERM');
-                    } catch {
-                        // Ignore process kill errors
-                    }
+                    terminateProcess();
                 }, timeoutMs);
+
+                function cleanup() {
+                    clearTimeout(timeout);
+                    signal?.removeEventListener('abort', handleAbort);
+                }
+
+                function terminateProcess() {
+                    try {
+                        if (isWindows && proc.pid) {
+                            const killer = spawn(
+                                'taskkill',
+                                ['/PID', String(proc.pid), '/T', '/F'],
+                                { stdio: 'ignore', windowsHide: true }
+                            );
+                            killer.on('error', () => {
+                                try {
+                                    proc.kill();
+                                } catch {
+                                    // Process may already have exited.
+                                }
+                            });
+                        } else if (proc.pid && !proc.killed) {
+                            // Kill the shell and its child processes on POSIX systems.
+                            try {
+                                process.kill(-proc.pid, 'SIGTERM');
+                            } catch {
+                                proc.kill('SIGTERM');
+                            }
+                        }
+                    } catch {
+                        try {
+                            proc.kill();
+                        } catch {
+                            // Process may already have exited.
+                        }
+                    }
+                }
+
+                function handleAbort() {
+                    if (finished) return;
+
+                    cancelled = true;
+                    terminateProcess();
+                }
+
+                signal?.addEventListener('abort', handleAbort, { once: true });
+
+                if (signal?.aborted) {
+                    handleAbort();
+                }
 
                 function truncate(text: string, maxChars: number): string {
                     const trimmed = text.trim();
-                    if (trimmed.length <= maxChars) return trimmed || '(none)';
+
+                    if (trimmed.length <= maxChars) {
+                        return trimmed || '(none)';
+                    }
+
                     const head = trimmed.slice(0, Math.floor(maxChars * 0.3));
                     const tail = trimmed.slice(-Math.floor(maxChars * 0.6));
+
                     return `${head}\n\n[...truncated (${trimmed.length} total chars)...]\n\n${tail}`;
                 }
 
                 proc.on('close', (code) => {
-                    clearTimeout(timeout);
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+
+                    if (cancelled || signal?.aborted) {
+                        reject(new DOMException('Operation cancelled', 'AbortError'));
+                        return;
+                    }
 
                     const exitCode = timedOut ? 124 : (code ?? 0);
                     const cwdSuffix = cwd ? ` (in ${cwd})` : '';
+
                     const statusLine = timedOut
                         ? `TIMED OUT after ${timeoutMs / 1000}s`
                         : exitCode === 0
@@ -151,7 +211,15 @@ export function createTerminalTool(projectRoot: string): Tool<TerminalArgs> {
                 });
 
                 proc.on('error', (err) => {
-                    clearTimeout(timeout);
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+
+                    if (cancelled || signal?.aborted) {
+                        reject(new DOMException('Operation cancelled', 'AbortError'));
+                        return;
+                    }
+
                     resolve({
                         content: `Failed to spawn command process: ${err.message}`,
                         summary: `$ ${trimmedCommand} [failed to start]`,

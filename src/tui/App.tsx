@@ -1,5 +1,5 @@
 import React, { useMemo, useState , useEffect} from 'react';
-import { Text, Box } from 'ink';
+import { Text, Box, useInput, useApp } from 'ink';
 import { AgentStatus, ApprovalDecision, ChatMessage } from '../types/chat.js';
 import { ToolCall } from '../types/tool.js';
 import MessageList from './components/MessageList.js';
@@ -38,6 +38,26 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
 }, [agent, projectRoot]);
 
     const isBusy = status === 'thinking' || status === 'executing_tool' || status === 'awaiting_approval';
+
+    const { exit } = useApp();
+
+    useInput((input, key) => {
+        const isCtrlC = key.ctrl && input.toLowerCase() === 'c';
+        const isCancelKey = key.escape || isCtrlC;
+
+        if (!isCancelKey) return;
+
+        if (isBusy) {
+            agent.cancel();
+            setPendingApproval(null);
+            setStreamingSnippet(undefined);
+            return;
+        }
+
+        if (isCtrlC) {
+            exit();
+        }
+    });
     
     let statusText = 'Thinking...';
     if (status === 'awaiting_approval') {
