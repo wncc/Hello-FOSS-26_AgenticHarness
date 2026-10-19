@@ -4,7 +4,7 @@ import { navigate, click, type as typeText, screenshot } from '../browser/action
 
 export const webSearchTool: Tool = {
     name: 'web_search',
-    description: 'Searches the web using Tavily API. Use this to find documentation, answers, or links.',
+    description: 'Searches the web using the configured search provider (Tavily, DuckDuckGo, or Mock). Use this to find documentation, answers, or links.',
     parameters: {
         type: 'object',
         properties: {

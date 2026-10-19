@@ -61,9 +61,94 @@ export class TavilySearchProvider implements ISearchProvider {
     }
 }
 
+
+export class DuckDuckGoSearchProvider implements ISearchProvider {
+    async search(query: string): Promise<SearchResult[]> {
+        const url = new URL('https://html.duckduckgo.com/html/');
+        url.searchParams.set('q', query);
+
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`DuckDuckGo search failed: ${response.status}`);
+        }
+
+        const html = await response.text();
+        const doc = new JSDOM(html);
+        const results: SearchResult[] = [];
+
+        for (const result of doc.window.document.querySelectorAll('.result')) {
+            const link = result.querySelector<HTMLAnchorElement>('.result__a');
+            const snippet = result.querySelector('.result__snippet');
+
+            if (link?.href && link.textContent?.trim()) {
+                let finalUrl = link.href;
+
+                try {
+                    const parsed = new URL(
+                        link.href,
+                        'https://html.duckduckgo.com'
+                    );
+
+                    finalUrl = parsed.searchParams.get('uddg') ?? parsed.href;
+                } catch {
+                    // Keep the original URL if parsing fails.
+                }
+
+                results.push({
+                    title: link.textContent.trim(),
+                    url: finalUrl,
+                    content: snippet?.textContent?.trim() ?? '',
+                });
+            }
+
+            if (results.length >= 5) break;
+        }
+
+        return results;
+    }
+}
+
+
+export class MockSearchProvider implements ISearchProvider {
+    async search(query: string): Promise<SearchResult[]> {
+        return [
+            {
+                title: `Mock result for: ${query}`,
+                url: 'https://example.com/mock-result-1',
+                content: `Synthetic offline search result for query: ${query}`,
+            },
+            {
+                title: `More information about: ${query}`,
+                url: 'https://example.com/mock-result-2',
+                content: `Another synthetic result for query: ${query}`,
+            },
+        ];
+    }
+}
+
+
+export function getSearchProvider(): ISearchProvider {
+    switch (env.SEARCH_PROVIDER) {
+        case 'mock':
+            return new MockSearchProvider();
+        case 'duckduckgo':
+            return new DuckDuckGoSearchProvider();
+        case 'tavily':
+            return new TavilySearchProvider();
+        default:
+            return env.TAVILY_API_KEY || env.SEARCH_API_KEY
+                ? new TavilySearchProvider()
+                : new DuckDuckGoSearchProvider();
+    }
+}
+
 export async function web_search(query: string): Promise<SearchResult[]> {
-    const provider = new TavilySearchProvider();
-    return await provider.search(query);
+    return getSearchProvider().search(query);
 }
 
 export async function fetch_markdown(url: string): Promise<string> {
