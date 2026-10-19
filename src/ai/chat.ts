@@ -66,6 +66,13 @@ export class OpenAiChatService implements ChatService {
             content: choice.message.content ?? null,
             toolCalls,
             providerMetadata: Object.keys(messageExtra).length ? messageExtra : undefined,
+            usage: response.usage
+                ? {
+                    promptTokens: response.usage.prompt_tokens,
+                    completionTokens: response.usage.completion_tokens,
+                    totalTokens: response.usage.total_tokens,
+                }
+                : undefined,
         };
     }
 

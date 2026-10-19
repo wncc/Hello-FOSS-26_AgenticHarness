@@ -40,14 +40,31 @@ export type ChatMessage =
     | AssistantMessage
     | ToolMessage;
 
+export interface TokenUsage {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+}
+
 export interface ChatResponse {
     content: string | null;
     toolCalls?: ToolCall[];
     providerMetadata?: Record<string, any>;
+    usage?: TokenUsage;
 }
 
 export interface ChatService {
     chat(messages: ChatMessage[], tools?: Tool[]): Promise<ChatResponse>;
+}
+
+export interface SessionStats {
+    totalTurns: number;
+    totalRequests: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    lastRequestInputTokens?: number;
+    contextWindowSize?: number;
 }
 
 export interface AgentState {
@@ -55,6 +72,8 @@ export interface AgentState {
     status: AgentStatus;
     activeToolName?: string;
     error?: string;
+    stats: SessionStats;
+    model: string;
 }
 
 export type AgentListener = (state: AgentState) => void;

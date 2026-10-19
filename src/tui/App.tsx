@@ -22,20 +22,26 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
     const agent = useMemo(() => propAgent ?? new Agent(), [propAgent]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => agent.getState().messages);
+    const [stats, setStats] = useState(() => agent.getState().stats);
+    const [model, setModel] = useState(() => agent.getState().model);
     const [status, setStatus] = useState<AgentStatus>('idle');
     const [activeToolName, setActiveToolName] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [input, setInput] = useState('');
     const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
     const [streamingSnippet, setStreamingSnippet] = useState<string | undefined>();
+    const [statsOutput, setStatsOutput] = useState<string | undefined>();
 
     useEffect(() => {
-    if (!projectRoot) return;
-    const unsubscribe = agent.subscribe((state) => {
-        saveSession(projectRoot, state.messages);
-    });
-    return unsubscribe;
-}, [agent, projectRoot]);
+        const unsubscribe = agent.subscribe((state) => {
+            setStats(state.stats);
+            setModel(state.model);
+            if (projectRoot) {
+                saveSession(projectRoot, state.messages);
+            }
+        });
+        return unsubscribe;
+    }, [agent, projectRoot]);
 
     const isBusy = status === 'thinking' || status === 'executing_tool' || status === 'awaiting_approval';
     
@@ -52,6 +58,32 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
         setInput('');
         setError(undefined);
         setStreamingSnippet(undefined);
+
+        if (submittedText.trim() === '/stats') {
+            const current = agent.getState();
+
+            setStatsOutput(
+                [
+                    'Session statistics',
+                    `Model: ${current.model}`,
+                    `Total turns: ${current.stats.totalTurns}`,
+                    `Total API requests: ${current.stats.totalRequests}`,
+                    `Input tokens: ${current.stats.promptTokens}`,
+                    `Output tokens: ${current.stats.completionTokens}`,
+                    `Total tokens: ${current.stats.totalTokens}`,
+                    `Latest request input tokens: ${
+                        current.stats.lastRequestInputTokens ?? 'Unavailable'
+                    }`,
+                    `Model context window: ${
+                        current.stats.contextWindowSize?.toLocaleString('en-US') ?? 'Unavailable'
+                    } tokens`,
+                ].join('\n')
+            );
+
+            return;
+        }
+
+        setStatsOutput(undefined);
 
         const handleChunk = (chunk: string) => {
             const lines = chunk.trim().split(/\r?\n/).filter(Boolean);
@@ -92,6 +124,20 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
     return (
         <Box flexDirection='column' paddingX={1}>
             <MessageList messages={messages} projectRoot={projectRoot} />
+
+            <Box marginBottom={1}>
+                <Text color="cyan">
+                    Model: {model} | Tokens: {stats.totalTokens} | Requests: {stats.totalRequests}
+                </Text>
+            </Box>
+
+            {statsOutput && (
+                <Box flexDirection="column" marginBottom={1}>
+                    {statsOutput.split('\n').map((line, index) => (
+                        <Text key={index}>{line}</Text>
+                    ))}
+                </Box>
+            )}
 
             {error && (
                 <Box marginBottom={1}>
