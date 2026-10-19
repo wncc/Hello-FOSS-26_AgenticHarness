@@ -86,9 +86,22 @@ export class DuckDuckGoSearchProvider implements ISearchProvider {
             const snippet = result.querySelector('.result__snippet');
 
             if (link?.href && link.textContent?.trim()) {
+                let finalUrl = link.href;
+
+                try {
+                    const parsed = new URL(
+                        link.href,
+                        'https://html.duckduckgo.com'
+                    );
+
+                    finalUrl = parsed.searchParams.get('uddg') ?? parsed.href;
+                } catch {
+                    // Keep the original URL if parsing fails.
+                }
+
                 results.push({
                     title: link.textContent.trim(),
-                    url: link.href,
+                    url: finalUrl,
                     content: snippet?.textContent?.trim() ?? '',
                 });
             }
