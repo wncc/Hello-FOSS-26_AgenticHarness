@@ -22,16 +22,21 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
     const agent = useMemo(() => propAgent ?? new Agent(), [propAgent]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => agent.getState().messages);
+    const [stats, setStats] = useState(() => agent.getState().stats);
+    const [model, setModel] = useState(() => agent.getState().model);
     const [status, setStatus] = useState<AgentStatus>('idle');
     const [activeToolName, setActiveToolName] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [input, setInput] = useState('');
     const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
     const [streamingSnippet, setStreamingSnippet] = useState<string | undefined>();
+    const [statsOutput, setStatsOutput] = useState<string | undefined>();
 
     useEffect(() => {
-        if (!projectRoot) return;
         const unsubscribe = agent.subscribe((state) => {
+            setStats(state.stats);
+            setModel(state.model);
+            if (!projectRoot) return;
             const hasConversation = state.messages.some((msg) => msg.role !== 'system');
             if (hasConversation) {
                 saveSession(projectRoot, state.messages);
@@ -71,8 +76,6 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
             : `Running ${activeToolName || 'tool'}...`;
     }
 
-    const { exit } = useApp();
-
     const handleSubmit = async (submittedText: string) => {
         const text = submittedText.trim();
         if (!text) return; 
@@ -93,9 +96,31 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
                 case '/help':
                     setMessages(prev => [...prev, {
                         role: 'assistant',
-                        content: 'Available commands:\n/help - Show this message\n/clear - Clear chat history\n/exit or /quit - Exit the application\n\nShortcuts:\nEnter - Send message\nCtrl+C - Exit'
+                        content: 'Available commands:\n/help - Show this message\n/stats - Show session token usage\n/clear - Clear chat history\n/exit or /quit - Exit the application\n\nShortcuts:\nEnter - Send message\nCtrl+C - Exit'
                     }]);
                     break;
+                case '/stats': {
+                    const current = agent.getState();
+
+                    setStatsOutput(
+                        [
+                            'Session statistics',
+                            `Model: ${current.model}`,
+                            `Total turns: ${current.stats.totalTurns}`,
+                            `Total API requests: ${current.stats.totalRequests}`,
+                            `Input tokens: ${current.stats.promptTokens}`,
+                            `Output tokens: ${current.stats.completionTokens}`,
+                            `Total tokens: ${current.stats.totalTokens}`,
+                            `Latest request input tokens: ${
+                                current.stats.lastRequestInputTokens ?? 'Unavailable'
+                            }`,
+                            `Model context window: ${
+                                current.stats.contextWindowSize?.toLocaleString('en-US') ?? 'Unavailable'
+                            } tokens`,
+                        ].join('\n')
+                    );
+                    break;
+                }
                 default:
                     setError(`Unknown command: ${command}. Type /help for available commands.`);
                     break;
@@ -108,6 +133,8 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
         setInput('');
         setError(undefined);
         setStreamingSnippet(undefined);
+
+        setStatsOutput(undefined);
 
         const handleChunk = (chunk: string) => {
             const lines = chunk.trim().split(/\r?\n/).filter(Boolean);
@@ -148,6 +175,20 @@ export default function App({ agent: propAgent, projectRoot }: AppProps) {
     return (
         <Box flexDirection='column' paddingX={1}>
             <MessageList messages={messages} projectRoot={projectRoot} />
+
+            <Box marginBottom={1}>
+                <Text color="cyan">
+                    Model: {model} | Tokens: {stats.totalTokens} | Requests: {stats.totalRequests}
+                </Text>
+            </Box>
+
+            {statsOutput && (
+                <Box flexDirection="column" marginBottom={1}>
+                    {statsOutput.split('\n').map((line, index) => (
+                        <Text key={index}>{line}</Text>
+                    ))}
+                </Box>
+            )}
 
             {error && (
                 <Box marginBottom={1}>

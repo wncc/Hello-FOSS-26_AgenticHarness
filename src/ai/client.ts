@@ -9,6 +9,7 @@ const PROVIDER_CONFIG = {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: process.env.OPENROUTER_API_KEY,
         model: 'openrouter/free',
+        contextWindowTokens: undefined,
     },
     gemini: {
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
@@ -17,6 +18,7 @@ const PROVIDER_CONFIG = {
         model: 'gemini-flash-lite-latest',
         // deprecated: bypassThoughtSignature: false, Toggle: injects 'skip_thought_signature_validator' if signature is absent. 
         // basically, google gives you an error if it doesn't get its older thought-process back. but it *can* get dropped by openai sdk or something, if it does, we can choose to silence that error using this bypassing flag. 
+        contextWindowTokens: 1_048_576,
     },
 } as const;
 

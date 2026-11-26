@@ -13,12 +13,14 @@ import {
     ChatMessage,
     ChatResponse,
     ChatService,
+    SessionStats,
 } from "../types/chat.js";
 import { Tool, ToolCall, ToolResult } from "../types/tool.js";
 import { SessionPermissionManager } from "../utils/permissions.js";
 import { getProjectTree } from "../utils/workspace.js";
 import { OpenAiChatService } from "./chat.js";
 import { ToolRunner } from "./toolRunner.js";
+import { config } from "./client.js";
 
 export interface AgentOptions {
     chatService?: ChatService;
@@ -35,6 +37,15 @@ export class Agent {
     private permissionManager: SessionPermissionManager;
     private messages: ChatMessage[] = [];
     private status: AgentStatus = 'idle';
+    private stats: SessionStats = {
+        totalTurns: 0,
+        totalRequests: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        contextWindowSize: config.contextWindowTokens,
+    };
+    private model = config.model;
     private activeToolName?: string;
     private activeAbortController?: AbortController;
     private error?: string;
@@ -67,6 +78,8 @@ export class Agent {
             status: this.status,
             activeToolName: this.activeToolName,
             error: this.error,
+            stats: { ...this.stats },
+            model: this.model,
         };
     }
 
@@ -240,6 +253,7 @@ private trimHistoryIfNeeded(): void {
 
         const userMessage: ChatMessage = { role: 'user', content: trimmed };
         this.messages.push(userMessage);
+        this.stats.totalTurns += 1;
         this.setStatus('thinking');
 
         yield { type: 'message', message: userMessage };
@@ -265,6 +279,17 @@ private trimHistoryIfNeeded(): void {
                 if (signal.aborted) {
                     throw new DOMException('Operation cancelled', 'AbortError');
                 }
+
+                this.stats.totalRequests += 1;
+                this.stats.lastRequestInputTokens = response.usage?.promptTokens;
+
+                if (response.usage) {
+                    this.stats.promptTokens += response.usage.promptTokens;
+                    this.stats.completionTokens += response.usage.completionTokens;
+                    this.stats.totalTokens += response.usage.totalTokens;
+                }
+
+                this.notify();
 
                 const assistantMessage: ChatMessage = {
                     role: 'assistant',
